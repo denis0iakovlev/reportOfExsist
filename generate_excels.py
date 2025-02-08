@@ -51,6 +51,13 @@ def generate_random_data(n):
     df = pd.DataFrame(data, columns=['ID', 'Дата', "ФИО"])
     df['ID'] = df['ID'].astype('int64')
     return df
+def genarte_df_tabel(df:pd.DataFrame):
+    df["Дата"] = pd.to_datetime(df["Дата"], errors='coerce')
+    df.dropna(subset=["Дата"], inplace=True)
+    df["date_only"] = df["Дата"].dt.date
+    result = df.groupby("ID")["date_only"].nunique().reset_index()
+    result.columns = ["ID", "days_count"]
+    return result
 
 if __name__ == '__main__':
 
@@ -58,9 +65,12 @@ if __name__ == '__main__':
     n_rows = 10  # можно изменить на любое другое количество
     # Генерируем DataFrame с данными
     df_random = generate_random_data(n_rows)
+    # 
     
     # Сохраняем DataFrame в Excel-файл (без индексов)
     output_file = 'test_data/random_data.xlsx'
     df_random.to_excel(output_file, index=False, header=None)
-    
+    out_tabel_file = "./tabel_data.xlsx"
+    df_tabel = genarte_df_tabel(df_random)
+    df_tabel.to_excel(out_tabel_file)
     print(f"Данные сохранены в файл: {output_file}")

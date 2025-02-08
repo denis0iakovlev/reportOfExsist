@@ -73,7 +73,6 @@ def create_exsist_df(raw_data:pd.DataFrame)->pd.DataFrame:
     
     return exsist_df
 
-
 def with_holidays(allDays:pd.DataFrame):
     # Список официальных праздничных дней в России в 2024 году
     holiday_dates =  [
@@ -95,7 +94,39 @@ def with_holidays(allDays:pd.DataFrame):
     df_free_days = allDays.drop(columns=[col for col in columns if  pd.to_datetime(col, errors='coerce') not in excluded_dates], errors='ignore')
     return df_work_days, df_free_days
     
+def read_excel_and_get_cols(excel_file:str, inx_id:int, inx_sum_days:int)->pd.DataFrame:
+     df = pd.read_excel(excel_file, header=None)
+     df = df.iloc[:,[inx_id ,inx_sum_days]]
+     df.columns =["ID", "days_count"]
+     return df
 
+def fill_summ_days(to_df:pd.DataFrame, from_df:pd.DataFrame, col_name_add:str, col_name_from:str):
+    to_df[col_name_add] = None
+    print(from_df.columns)
+    to_df['id'] = pd.to_numeric(to_df["ID"], errors='coerce', downcast='unsigned').astype('Int64')
+    for _, row in to_df.iterrows():
+        #Получить id и найти в сводной таблице строку с таким же id
+        id = row['id']
+        if isinstance(id, int):
+            filtered_df = from_df[from_df["id"] == id]
+            if not filtered_df.empty:
+                index_row_on_id= to_df.index[to_df['id'] == id][0]
+                to_df.at[index_row_on_id, col_name_add] = filtered_df.iloc[0][col_name_from]
+         
+    to_df = to_df.drop(columns=['id'])
+    return to_df
+
+def calculate_exsisting_summ(df:pd.DataFrame):
+    df["date"] = pd.to_datetime(df["date"], errors='coerce')
+    df.dropna(subset=["date"], inplace=True)
+    df["date_only"] = df["date"].dt.date
+    result = df.groupby("id")["date_only"].nunique().reset_index()
+    result.columns = ["ID", "days_count"]
+    return result
+
+def calc_summ_days(df:pd.DataFrame, name_col:str):
+    df[name_col] = df.iloc[:, 2:-1].apply(lambda row: row[row > 4].count(), axis=1)
+    return  df
 
 if __name__ == '__main__':
     if len(sys.argv) != 3:
@@ -105,7 +136,10 @@ if __name__ == '__main__':
     #general_df = read_excel_files(sys.argv[1], date_col_name=5, id_col_name=4, full_name=2)
     folder_with_excel = sys.argv[1]
     tabels_file = sys.argv[2]
-    general_df = read_excel_files(sys.argv[1], date_col_name=1, id_col_name=0, full_name=2)
+    if not tabels_file.endswith(('.xls', '.xlsx')):
+        print(f"Wrong argument with tabel data  {tabels_file}")
+        sys.exit(1)
+    general_df = read_excel_files(folder_with_excel, date_col_name=1, id_col_name=0, full_name=2)
     #Посчитать по каждому идентификатору часы по каждому дню
     ever_day = calculate_time_deltas(general_df)
     #Для проверки данных
@@ -114,13 +148,21 @@ if __name__ == '__main__':
     exsist_df = create_exsist_df(raw_data=ever_day)
     splited_on_work_days = with_holidays(exsist_df)
     #
+    calc_summ_days(splited_on_work_days[0], "Summ")
+    calc_summ_days(splited_on_work_days[1], "Summ")
+    calc_summ_days(exsist_df, "Summ")
+    #
     reportPath= './report_of_exsist.xlsx'
     with pd.ExcelWriter(reportPath) as writer:
         exsist_df.to_excel(writer, sheet_name="Все дни", index=False)
         exsist_df[['id', "Ф.И.О"]].to_excel(writer, sheet_name="Пользователи", index=False)
         splited_on_work_days[0].to_excel(writer, sheet_name="Только рабочие", index=False)
         splited_on_work_days[1].to_excel(writer, sheet_name="Только праздничные", index=False)
-
+    #
+    report_with_summ = './summ_days.xlsx'
+    df_tabel = read_excel_and_get_cols(tabels_file, inx_id=1, inx_sum_days=2)
+    df_with_summ = fill_summ_days(df_tabel, exsist_df, col_name_add="Summ days 1C", col_name_from='Summ')
+    df_with_summ.to_excel(report_with_summ)
     print(f"Результат сохранён в файл {reportPath}")
     sys.exit(0)
 
