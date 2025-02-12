@@ -1,2 +1,6 @@
 test_data
 **.xlsx
+**/__pycache__
+**/*.db
+**/*.zip
+**/*.json

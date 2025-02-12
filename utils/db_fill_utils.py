@@ -60,8 +60,9 @@ def add_gate_pass_registrations(pass_reg_list:list[tuple[str, int, str, str, str
                 gate = session.query(Gate).filter(Gate.name == gate_name).first()
                 if gate is None:
                     raise Exception(f"Отстутствует в БД проходная  с именем  {gate_name}")
-                date_time = datetime.strptime(date, '%Y-%m-%d %H:%M')
-                gate_pass_time = GatePassTime(timestamp=date_time, pick_type_id=pass_type.id, person_id=person.id, gate_id=gate.id, isHoliday=date_time.date() in holidays)
+    
+                #date_time = datetime.strptime(date, '%Y-%m-%d %H:%M')
+                gate_pass_time = GatePassTime(timestamp=date, pick_type_id=pass_type.id, person_id=person.id, gate_id=gate.id, isHoliday=date.date() in holidays)
                 session.add(gate_pass_time)
             except Exception as e:
                 print(f"Не удалось добавить записи в таблицу Отметка о прохождении через проходную. {department_name} {personId} {date} {pass_type_name} {gate_name}. {e}")
@@ -101,13 +102,13 @@ def add_pass_types(pick_types_name: list[str]):
     finally:
         session.close()
 
-def add_person_list(person_list_id: list[int]):
+def add_person_list(person_list_id: list[tuple[int, str, str]]):
     session = SessionLocal()
     try:
-        for id in person_list_id:
+        for id, dep_name, prof_name in person_list_id:
             exsist_person = session.query(Person).filter(Person.id == id).first()
             if exsist_person is None:
-                person = Person(id=id)
+                person = Person(id=id, dep_name=dep_name, prof_name=prof_name)
                 session.add(person)
         session.commit()
     except Exception as e:

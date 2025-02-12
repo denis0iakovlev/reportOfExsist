@@ -28,6 +28,8 @@ class Person(Base):
     id:Mapped[int] = mapped_column(Integer, primary_key=True)
     firstName:Mapped[str] = mapped_column(String,default="Имя", nullable=True)
     lastName:Mapped[str] = mapped_column(String, default='Фамилия', nullable=True)
+    dep_name:Mapped[str] = mapped_column(String, default='отдел', nullable=True)
+    prof_name:Mapped[str] = mapped_column(String, default='профессия', nullable=True)
 #Тип прохода выход/вход
 class PassType(Base):
     __tablename__ = 'PickType'
