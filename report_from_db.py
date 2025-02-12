@@ -34,52 +34,55 @@ def calculate_daily_work_time_on_nearest(df: pd.DataFrame):
 
 
 def calculate_daily_work_time_v2(df: pd.DataFrame):
+    """Вычисляет рабочее время по первому входу и последнему выходу, учитывая переход дней и множественные записи.
+    Если день содержит только выходы, проверяет предыдущий день на наличие входа и учитывает рабочее время от полуночи.
+    Разбивает последовательности ВХОД-ВЫХОД на группы."""
     df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df['date'] = df['timestamp'].dt.date
     df = df.sort_values(by=['person_id', 'timestamp'])
+    df['date'] = df['timestamp'].dt.date
+    df['group_id'] = (df['pass_type'] != df['pass_type'].shift()).cumsum()
     work_times = []
-    
+
     for (person_id,date), group in df.groupby(['person_id', 'date']):
-        entries = group['timestamp'].tolist()
-        while entries:
-            entry_time = entries.pop(0)
-            start_time = datetime.combine(entry_time.date(), time(0, 0, 0))
-            end_time = datetime.combine(entry_time.date(), time(23, 59, 59))
-            type_pass = group.loc[group['timestamp'] == entry_time,'pass_type' ].values[0]
-            #Обрабатываем случий если вход и текущий индекс не последний
-            if type_pass == 'ВХОД' : 
-                start_time = entry_time
-                #Если есть следующий элемент то пытаемся получить конечную вермя пребывания
-                while entries:
-                    #Получить следующующую дату 
-                    next_time = entries[0]
-                    type_next_time = group.loc[group['timestamp'] == next_time,'pass_type' ].values[0]
-                    if type_next_time == 'ВЫХОД':
-                        end_time = entries.pop(0)
-                        break
-                    else:
-                        entries.pop(0)
-            else: # если выход 
-                end_time = entry_time
-                while entries:
-                    #Получить следующующую дату 
-                    next_time = entries[0]
-                    type_next_time = group.loc[group['timestamp'] == next_time,'pass_type' ].values[0]
-                    if type_next_time == 'ВХОД':
-                        end_time = entries.pop(0)
-                        break
-                    else:
-                        entries.pop(0)
-            
-            work_duration = (end_time - start_time).total_seconds() / 3600
-            
+        group = group.sort_values(by='timestamp')
+        start_time = None
+        end_time = None
+        isHoliday = group.iloc[0]['isHoliday']
+        #Разбиваем кокретный день конкретного пользователя на входы-выходы
+        for _, sub_group in group.groupby('group_id'):
+            sub_group = sub_group.sort_values(by='timestamp')
+            print(sub_group)
+            type_pass_group = sub_group.iloc[0]['pass_type']
+            if type_pass_group == 'ВХОД':
+                #проверяем что предыдущая записи была ВЫХОД
+                start_time = sub_group.iloc[0]['timestamp']
+            else:
+                st_tm_is_set = True
+                if start_time is None:
+                    start_time = datetime.combine(date, time(0,0,0))
+                    st_tm_is_set = False
+                end_time = sub_group.iloc[-1]['timestamp']
+                work_duration = (end_time - start_time).total_seconds() / 3600
+                if  len(work_times) == 0 or work_times[-1]['pass_type'] == 'ВХОД' or st_tm_is_set  :
+                    work_times.append({
+                        'person_id': person_id, 
+                        'date': date, 
+                        'pass_type':type_pass_group,
+                        'work_hours': work_duration,
+                        'isHoliday': isHoliday,
+                    })
+                start_time = None
+                end_time = None
+        if start_time is not None and end_time is None:
+            work_duration = ( datetime.combine(date, time(23,59,59)) - start_time).total_seconds() / 3600
             work_times.append({
-                'person_id': person_id, 
-                'date': entry_time.date(), 
-                'isHoliday':group.loc[group['timestamp'] == entry_time, 'isHoliday'].values[0],
-                'work_hours': work_duration
-            })
-    
+                    'person_id': person_id, 
+                    'date': date, 
+                    'pass_type':type_pass_group,
+                    'work_hours': work_duration,
+                    'isHoliday': isHoliday,
+                })
+
     result_df = pd.DataFrame(work_times)
     return result_df.sort_values(by=['date'])
 
