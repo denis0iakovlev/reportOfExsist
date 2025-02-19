@@ -1,6 +1,7 @@
 from utils.db_get_utils import get_filtered_gate_pass_times
 import pandas as pd
 from datetime import datetime, time, timedelta
+import shutil
 
 def calculate_daily_work_time_on_nearest(df: pd.DataFrame):
     df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -51,7 +52,6 @@ def calculate_daily_work_time_v2(df: pd.DataFrame):
         #Разбиваем кокретный день конкретного пользователя на входы-выходы
         for _, sub_group in group.groupby('group_id'):
             sub_group = sub_group.sort_values(by='timestamp')
-            print(sub_group)
             type_pass_group = sub_group.iloc[0]['pass_type']
             if type_pass_group == 'ВХОД':
                 #проверяем что предыдущая записи была ВЫХОД
@@ -118,15 +118,56 @@ def create_anual_report(df: pd.DataFrame)-> pd.DataFrame:
             annual_report.insert(annual_report.columns.get_loc(name_col) + 3, f"{month_name} Общее", monthly_totals.get(month_name, 0))
     return annual_report
 
+
+def normalize_and_calculate_total_work(df: pd.DataFrame) -> pd.DataFrame:
+    """Нормализует рабочее время (ограничивает 8 часами) и считает общее рабочее время и количество дней."""
+    df_normalized = df[['person_id', 'work_hours']].copy()
+    df_normalized['work_days'] = 1
+    df_normalized['total_hours'] = df['work_hours'].map(lambda x: min(x, 8) if pd.notna(x) else x)
+    #df_normalized['total_days'] = df_normalized['total_hours']/ 8
+    df_normalized = df_normalized.groupby('person_id', as_index=False).sum()
+    df_normalized['total_days'] = df_normalized['total_hours']/8
+    return df_normalized.reset_index()
+
+
+
+def update_excel_with_work_data(excel_path: str, work_df: pd.DataFrame, hours_col_idx: int, days_col_idx: int, skip_row:int =10 ):
+    """Обновляет Excel-файл, заполняя суммы отработанных часов и дней по ID сотрудников."""
+    df_excel = pd.read_excel(excel_path)
+    
+    work_dict = work_df.set_index('person_id').to_dict()
+    
+    for index, row in df_excel.iterrows():
+        person_id = row.iloc[0]
+        if person_id in work_dict['total_hours']:
+            df_excel.at[index, df_excel.columns[hours_col_idx]] = work_dict['total_hours'][person_id]
+        if person_id in work_dict['total_days']:
+            df_excel.at[index, df_excel.columns[days_col_idx]] = work_dict['total_days'][person_id]
+    
+    return df_excel
+
+
 if __name__ == '__main__':
     yanuar_pass_list = get_filtered_gate_pass_times()
     all_year_db_records = pd.DataFrame(yanuar_pass_list)
     work_times = calculate_daily_work_time_v2(all_year_db_records)
     annual_repo_df = create_anual_report(work_times)
+    excel_path = 'db_reports/annual_repo_df.xlsx'
     annual_repo_df.to_excel('db_reports/annual_repo_df.xlsx')
+    print(f"Отчет учета времени по непрерывному рабочему создан. Путь к отчету {excel_path}")
     #Версия без разделения по полонучи
     work_times_v2 = calculate_daily_work_time_on_nearest(all_year_db_records)
     print(work_times_v2)
     annual_repo_df_v2 = create_anual_report(work_times_v2)
+    excel_path = 'db_reports/annual_repo_df_v2.xlsx'
     annual_repo_df_v2.to_excel('db_reports/annual_repo_df_v2.xlsx')
-    print("Отчеты сгенерированы")
+    print(f"Отчет учета времени с разбивкой по дням создан. Путь к отчету {excel_path}") 
+    share_excel_path = 'Свод_primer.xlsx'
+    total_days_and_hours_df = normalize_and_calculate_total_work(work_times_v2)
+    excel_path  = 'db_reports/share_report.xlsx'
+    shutil.copy(share_excel_path, excel_path)
+    shared_report = update_excel_with_work_data(excel_path=excel_path, work_df=total_days_and_hours_df, hours_col_idx=11, days_col_idx=10)
+    shared_report.to_excel(excel_path, index=False, header=False)
+    print(f"Сводный отчет создан. Путь к отчету {excel_path}")
+
+
